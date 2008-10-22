@@ -10,6 +10,13 @@ class StorageTest < Test::Unit::TestCase
     @temp_file.close! if @temp_file && !@temp_file.closed?
   end
   
+  def temp_file(fixture)
+    file = File.new(File.dirname(__FILE__) + "/../test_rails/fixtures/#{fixture}", "r")
+    @temp_file = Tempfile.new("test")
+    @temp_file.write(file.read)
+    return @temp_file
+  end
+  
   def default_options
     mock_class = "test"
     mock_class.stubs(:table_name).returns('tests')
@@ -51,114 +58,105 @@ class StorageTest < Test::Unit::TestCase
   end
   
   def test_path_for
-    @storage = HasImage::Storage.new(default_options)
-    assert_match(/\/tmp\/tests\/0000\/0001/, @storage.send(:path_for, 1))
+    storage = HasImage::Storage.new(default_options)
+    assert_match(/\/tmp\/tests\/0000\/0001/, storage.send(:path_for, 1))
   end
   
   def test_public_path_for
-    @storage = HasImage::Storage.new(default_options.merge(:base_path => '/public'))
+    storage = HasImage::Storage.new(default_options.merge(:base_path => '/public'))
     pic = stub(:has_image_file => "mypic", :has_image_id => 1)
-    assert_equal "/tests/0000/0001/mypic_square.jpg", @storage.public_path_for(pic, :square)
+    assert_equal "/tests/0000/0001/mypic_square.jpg", storage.public_path_for(pic, :square)
   end
   
   def test_public_path_for_image_with_html_special_symbols_in_name
-    @storage = HasImage::Storage.new(default_options.merge(:base_path => '/public'))
+    storage = HasImage::Storage.new(default_options.merge(:base_path => '/public'))
     pic = stub(:has_image_file => "my+pic", :has_image_id => 1)
-    assert_equal "/tests/0000/0001/my%2Bpic_square.jpg", @storage.public_path_for(pic, :square)
+    assert_equal "/tests/0000/0001/my%2Bpic_square.jpg", storage.public_path_for(pic, :square)
   end
   
   def test_name_generation_takes_into_account_thumbnail_separator_constant
     old_separator = HasImage::Storage.thumbnail_separator
     
-    @storage = HasImage::Storage.new(default_options.merge(:thumbnails => {:schick => '22x22'}, :base_path => '/public'))
+    storage = HasImage::Storage.new(default_options.merge(:thumbnails => {:schick => '22x22'}, :base_path => '/public'))
     HasImage::Storage.thumbnail_separator = '.'
     pic = stub(:has_image_file => "pic", :has_image_id => 1)
-    assert_equal "/tests/0000/0001/pic.schick.jpg", @storage.public_path_for(pic, :schick)
+    assert_equal "/tests/0000/0001/pic.schick.jpg", storage.public_path_for(pic, :schick)
     
     HasImage::Storage.thumbnail_separator = old_separator
   end
 
   def test_escape_file_name_for_http
-    @storage = HasImage::Storage.new(default_options.merge(:base_path => '/public'))
-    real = @storage.escape_file_name_for_http("/tests/0000/0001/mypic+square?something.jpg")
+    storage = HasImage::Storage.new(default_options.merge(:base_path => '/public'))
+    real = storage.escape_file_name_for_http("/tests/0000/0001/mypic+square?something.jpg")
     assert_equal "/tests/0000/0001/mypic%2Bsquare%3Fsomething.jpg", real
   end
 
   def test_escape_file_name_for_http_escapes_only_filename
-    @storage = HasImage::Storage.new(default_options.merge(:base_path => '/public'))
-    real = @storage.escape_file_name_for_http("/tests/00+00/0001/mypic+square?something.jpg")
+    storage = HasImage::Storage.new(default_options.merge(:base_path => '/public'))
+    real = storage.escape_file_name_for_http("/tests/00+00/0001/mypic+square?something.jpg")
     assert_equal "/tests/00+00/0001/mypic%2Bsquare%3Fsomething.jpg", real
   end
   
   def test_filename_for
-    @storage = HasImage::Storage.new(default_options)
-    assert_equal "test.jpg", @storage.send(:file_name_for, "test")
+    storage = HasImage::Storage.new(default_options)
+    assert_equal "test.jpg", storage.send(:file_name_for, "test")
   end
 
   def test_set_data_from_file
-    @storage = HasImage::Storage.new(default_options)
+    storage = HasImage::Storage.new(default_options)
     @file = File.new(File.dirname(__FILE__) + "/../test_rails/fixtures/image.jpg", "r")
-    @storage.image_data = @file
-    assert @storage.temp_file.size > 0
-    assert_equal Zlib.crc32(@file.read), Zlib.crc32(@storage.temp_file.read)
+    storage.image_data = @file
+    assert storage.temp_file.size > 0
+    assert_equal Zlib.crc32(@file.read), Zlib.crc32(storage.temp_file.read)
   end
   
   def test_set_data_from_tempfile
-    @storage = HasImage::Storage.new(default_options)
-    @storage.image_data = temp_file("image.jpg")
-    assert @storage.temp_file.size > 0
-    assert_equal Zlib.crc32(@storage.temp_file.read), Zlib.crc32(@temp_file.read)
+    storage = HasImage::Storage.new(default_options)
+    storage.image_data = temp_file("image.jpg")
+    assert storage.temp_file.size > 0
+    assert_equal Zlib.crc32(storage.temp_file.read), Zlib.crc32(@temp_file.read)
   end
   
   def test_install_and_remove_images
-    @storage = HasImage::Storage.new(default_options.merge(:thumbnails => {
+    storage = HasImage::Storage.new(default_options.merge(:thumbnails => {
       :one => "100x100", :two => "200x200"}))
-    @storage.image_data = temp_file("image.jpg")
-    @name = @storage.install_images(stub(:has_image_id => 1))
-    assert @storage.remove_images(stub(:has_image_id => 1), @name)
+    storage.image_data = temp_file("image.jpg")
+    name = storage.install_images(stub(:has_image_id => 1))
+    assert storage.remove_images(stub(:has_image_id => 1), name)
   end
   
   def test_install_images_doesnt_automatically_generate_thumbnails_if_that_option_is_set
-    @storage = HasImage::Storage.new(default_options.merge(
+    storage = HasImage::Storage.new(default_options.merge(
       :thumbnails => {:two => "200x200"},
       :auto_generate_thumbnails => false
     ))
-    @storage.image_data = temp_file("image.jpg")
-    @storage.expects(:generate_thumbnails).never
-    @storage.install_images(stub(:has_image_id => 1))
+    storage.image_data = temp_file("image.jpg")
+    storage.expects(:generate_thumbnails).never
+    storage.install_images(stub(:has_image_id => 1))
   end
 
   def test_image_not_too_small
-    @storage = HasImage::Storage.new(default_options.merge(:min_size => 1.kilobyte))
-    @storage.image_data = temp_file("image.jpg")
-    assert !@storage.image_too_small?
+    storage = HasImage::Storage.new(default_options.merge(:min_size => 1.kilobyte))
+    storage.image_data = temp_file("image.jpg")
+    assert !storage.image_too_small?
   end
   
   def test_image_too_small
-    @storage = HasImage::Storage.new(default_options.merge(:min_size => 1.gigabyte))
-    @storage.image_data = temp_file("image.jpg")
-    assert @storage.image_too_small?
+    storage = HasImage::Storage.new(default_options.merge(:min_size => 1.gigabyte))
+    storage.image_data = temp_file("image.jpg")
+    assert storage.image_too_small?
   end
   
   def test_image_too_big
-    @storage = HasImage::Storage.new(default_options.merge(:max_size => 1.kilobyte))
-    @storage.image_data = temp_file("image.jpg")    
-    assert @storage.image_too_big?
+    storage = HasImage::Storage.new(default_options.merge(:max_size => 1.kilobyte))
+    storage.image_data = temp_file("image.jpg")
+    assert storage.image_too_big?
   end
-
+  
   def test_image_not_too_big
-    @storage = HasImage::Storage.new(default_options.merge(:max_size => 1.gigabyte))
-    @storage.image_data = temp_file("image.jpg")    
-    assert !@storage.image_too_big?
-  end
-  
-  private
-  
-  def temp_file(fixture)
-    file = File.new(File.dirname(__FILE__) + "/../test_rails/fixtures/#{fixture}", "r")
-    @temp_file = Tempfile.new("test")
-    @temp_file.write(file.read)
-    return @temp_file
+    storage = HasImage::Storage.new(default_options.merge(:max_size => 1.gigabyte))
+    storage.image_data = temp_file("image.jpg")
+    assert !storage.image_too_big?
   end
   
 end
