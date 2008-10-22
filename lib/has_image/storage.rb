@@ -14,7 +14,7 @@ module HasImage
     class_inheritable_accessor :thumbnail_separator
     write_inheritable_attribute :thumbnail_separator, '_'
     
-    attr_accessor :image_data, :options, :temp_file
+    attr_accessor :image_data, :temp_file
 
     class << self
       
@@ -48,9 +48,13 @@ module HasImage
       end
     end
 
-    # The constuctor should be invoked with the options set by has_image.
-    def initialize(options) # :nodoc:
-      @options = options
+    # The constructor should be invoked with the record
+    def initialize(record)
+      @record = record
+    end
+    
+    def options
+      @record.has_image_options
     end
 
     # The image data can be anything that inherits from IO. If you pass in an

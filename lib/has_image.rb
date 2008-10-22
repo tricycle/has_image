@@ -230,7 +230,7 @@ module HasImage
     # Gets an instance of the underlying storage functionality. See
     # HasImage::Storage.
     def storage
-      @storage ||= HasImage::Storage.new(has_image_options)
+      @storage ||= HasImage::Storage.new(self)
     end
     
     # By default, just returns the model's id. Since this id is used to divide
