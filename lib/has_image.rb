@@ -151,35 +151,35 @@ module HasImage
       end
     end
     
-    # Gets the "web path" for the image, or optionally, its thumbnail.
+    # Gets the "web path" for the image, or optionally, a named thumbnail.
     # Aliased as +public_filename+ for compatibility with attachment-Fu
-    def public_path(thumbnail = nil)
-      storage.public_path_for(self, thumbnail)
+    def public_path(thumb_name = nil)
+      storage.public_path(thumb_name)
     end
     alias_method :public_filename, :public_path
 
     # Gets the absolute filesystem path for the image, or optionally, its
     # thumbnail.
-    def absolute_path(thumbnail = nil)
-      storage.filesystem_path_for(self, thumbnail)
+    def absolute_path(thumb_name = nil)
+      storage.filesystem_path(thumb_name)
     end
     
     # Regenerates the thumbails from the main image.
     def regenerate_thumbnails!
-      storage.generate_thumbnails(has_image_id, send(has_image_options[:column]))
+      storage.generate_thumbnails
     end
     alias_method :regenerate_thumbnails, :regenerate_thumbnails! #Backwards compat
     
     def generate_thumbnail!(thumb_name)
-      storage.generate_thumbnail(has_image_id, send(has_image_options[:column]), thumb_name)
+      storage.generate_thumbnail(thumb_name)
     end
     
     def width
-      self[:width] || storage.measure(absolute_path, :width)
+      self[:width] || storage.measure(:width)
     end
     
     def height
-      self[:height] || storage.measure(absolute_path, :height)
+      self[:height] || storage.measure(:height)
     end
     
     def image_size
@@ -191,7 +191,7 @@ module HasImage
       return if send(has_image_options[:column]).blank? || !has_image_options[:delete]
       self.class.transaction do
         begin
-          storage.remove_images(self, send(has_image_options[:column]))
+          storage.remove_images
           # The record will be frozen if we're being called after destroy.
           unless frozen?
             # Resorting to SQL here to avoid triggering callbacks. There must be
@@ -220,9 +220,9 @@ module HasImage
     end
     
     def populate_attributes
-      send("#{has_image_options[:column]}=", storage.install_images(self))
-      self[:width] = storage.measure(absolute_path, :width) if self.class.column_names.include?('width')
-      self[:height] = storage.measure(absolute_path, :height) if self.class.column_names.include?('height')
+      send("#{has_image_options[:column]}=", storage.install_images)
+      self[:width] = storage.measure(:width) if self.class.column_names.include?('width')
+      self[:height] = storage.measure(:height) if self.class.column_names.include?('height')
       save!
     end
     private :populate_attributes
@@ -241,7 +241,6 @@ module HasImage
     def has_image_id
       id
     end
-    
   end
 
   module ModelClassMethods

@@ -3,7 +3,7 @@ require 'test_helper.rb'
 class StorageTest < Test::Unit::TestCase
   
   def setup
-    @record = stub(:has_image_file => "mypic", :has_image_id => 1, :has_image_options => default_options)
+    @record = stub(:has_image_file => "mypic", :has_image_id => 1, :to_param => '1', :has_image_options => default_options)
   end
   
   def teardown
@@ -58,62 +58,62 @@ class StorageTest < Test::Unit::TestCase
     assert_equal("1", HasImage::Storage.generated_file_name(stub(:to_param => 1)))
   end
   
-  def test_path_for
+  # HACK: shouldnt test private method
+  def test_path
     storage = HasImage::Storage.new(@record)
-    assert_match(/\/tmp\/tests\/0000\/0001/, storage.send(:path_for, 1))
+    assert_match(%r{/tmp/tests/0000/0001}, storage.send(:path))
   end
   
-  def test_public_path_for
+  def test_public_path
     @record.has_image_options[:base_path] = '/public'
+    @record.stubs(:has_image_file).returns('piktscha')
     storage = HasImage::Storage.new(@record)
-    pic = stub(:has_image_file => "mypic", :has_image_id => 1)
-    assert_equal "/tests/0000/0001/mypic_square.jpg", storage.public_path_for(pic, :square)
+    assert_equal "/tests/0000/0001/piktscha_square.jpg", storage.public_path(:square)
   end
   
   def test_public_path_for_image_with_html_special_symbols_in_name
     @record.has_image_options[:base_path] = '/public'
+    @record.stubs(:has_image_file).returns('my+pic')
     storage = HasImage::Storage.new(@record)
-    pic = stub(:has_image_file => "my+pic", :has_image_id => 1)
-    assert_equal "/tests/0000/0001/my%2Bpic_square.jpg", storage.public_path_for(pic, :square)
+    assert_equal "/tests/0000/0001/my%2Bpic_square.jpg", storage.public_path(:square)
   end
   
-  def test_name_generation_takes_into_account_thumbnail_separator_constant
-    old_separator = HasImage::Storage.thumbnail_separator
-    @record.has_image_options[:thumbnails] = {:schick => '22x22'}
-    @record.has_image_options[:base_path] = '/public'
-    storage = HasImage::Storage.new(@record)
-    HasImage::Storage.thumbnail_separator = '.'
-    pic = stub(:has_image_file => "pic", :has_image_id => 1)
-    assert_equal "/tests/0000/0001/pic.schick.jpg", storage.public_path_for(pic, :schick)
-    
-    HasImage::Storage.thumbnail_separator = old_separator
-  end
+  # def test_name_generation_takes_into_account_thumbnail_separator
+  #   old_separator = HasImage::Storage.thumbnail_separator
+  #   
+  #   @record.has_image_options[:thumbnails] = {:schick => '22x22'}
+  #   @record.has_image_options[:base_path] = '/public'
+  #   @record.stubs(:has_image_file).returns('piktscha')
+  #   storage = HasImage::Storage.new(@record)
+  #   HasImage::Storage.thumbnail_separator = '.'
+  #   assert_equal "/tests/0000/0001/pic.schick.jpg", storage.public_path(:schick)
+  #   
+  #   HasImage::Storage.thumbnail_separator = old_separator
+  # end
 
   def test_escape_file_name_for_http
-    @record.has_image_options[:base_path] = '/public'
-    storage = HasImage::Storage.new(@record)
-    real = storage.escape_file_name_for_http("/tests/0000/0001/mypic+square?something.jpg")
-    assert_equal "/tests/0000/0001/mypic%2Bsquare%3Fsomething.jpg", real
+    assert_equal "/tests/0000/0001/mypic%2Bsquare%3Fsomething.jpg", 
+      HasImage::Storage.escape_file_name_for_http("/tests/0000/0001/mypic+square?something.jpg")
   end
 
   def test_escape_file_name_for_http_escapes_only_filename
-    @record.has_image_options[:base_path] = '/public'
-    storage = HasImage::Storage.new(@record)
-    real = storage.escape_file_name_for_http("/tests/00+00/0001/mypic+square?something.jpg")
-    assert_equal "/tests/00+00/0001/mypic%2Bsquare%3Fsomething.jpg", real
+    assert_equal "/tests/00+00/0001/mypic%2Bsquare%3Fsomething.jpg",
+      HasImage::Storage.escape_file_name_for_http("/tests/00+00/0001/mypic+square?something.jpg")
   end
   
-  def test_filename_for
+  # HACK: private method, shouldnt be tested
+  def test_filename
+    @record.stubs(:has_image_file).returns('testing')
     storage = HasImage::Storage.new(@record)
-    assert_equal "test.jpg", storage.send(:file_name_for, "test")
+    assert_equal "testing.jpg", storage.send(:file_name)
   end
 
   def test_set_data_from_file
     storage = HasImage::Storage.new(@record)
-    @file = File.new(File.dirname(__FILE__) + "/../test_rails/fixtures/image.jpg", "r")
-    storage.image_data = @file
+    file = File.new(File.dirname(__FILE__) + "/../test_rails/fixtures/image.jpg", "r")
+    storage.image_data = file
     assert storage.temp_file.size > 0
-    assert_equal Zlib.crc32(@file.read), Zlib.crc32(storage.temp_file.read)
+    assert_equal Zlib.crc32(file.read), Zlib.crc32(storage.temp_file.read)
   end
   
   def test_set_data_from_tempfile
@@ -123,12 +123,26 @@ class StorageTest < Test::Unit::TestCase
     assert_equal Zlib.crc32(storage.temp_file.read), Zlib.crc32(@temp_file.read)
   end
   
+  def test_install_images_creates_files
+    @record.has_image_options[:thumbnails] = {:one => "100x100", :two => "200x200"}
+    storage = HasImage::Storage.new(@record)
+    storage.image_data = temp_file("image.jpg")
+    name = storage.install_images
+    # debugger
+    assert File.exist?(storage.send(:install_path_for, name))
+    assert File.exist?(storage.send(:install_path_for, name, :one))
+    assert File.exist?(storage.send(:install_path_for, name, :two))
+  end
+  
   def test_install_and_remove_images
     @record.has_image_options[:thumbnails] = {:one => "100x100", :two => "200x200"}
     storage = HasImage::Storage.new(@record)
     storage.image_data = temp_file("image.jpg")
-    name = storage.install_images(stub(:has_image_id => 1))
-    assert storage.remove_images(stub(:has_image_id => 1), name)
+    storage.install_images
+    storage.remove_images
+    assert !File.exist?(storage.send(:install_path_for, name))
+    assert !File.exist?(storage.send(:install_path_for, name, :one))
+    assert !File.exist?(storage.send(:install_path_for, name, :two))
   end
   
   def test_install_images_doesnt_automatically_generate_thumbnails_if_that_option_is_set
@@ -137,7 +151,7 @@ class StorageTest < Test::Unit::TestCase
     storage = HasImage::Storage.new(@record)
     storage.image_data = temp_file("image.jpg")
     storage.expects(:generate_thumbnails).never
-    storage.install_images(stub(:has_image_id => 1))
+    storage.install_images
   end
 
   def test_image_not_too_small
