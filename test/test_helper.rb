@@ -4,5 +4,5 @@ require 'test/unit'
 require 'rubygems'
 require 'mocha'
 require 'has_image'
-
+require 'ruby-debug'
 RAILS_ROOT = File.join(File.dirname(__FILE__), '..', 'tmp')
