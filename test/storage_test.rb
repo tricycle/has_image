@@ -128,7 +128,6 @@ class StorageTest < Test::Unit::TestCase
     storage = HasImage::Storage.new(@record)
     storage.image_data = temp_file("image.jpg")
     name = storage.install_images
-    # debugger
     assert File.exist?(storage.send(:install_path_for, name))
     assert File.exist?(storage.send(:install_path_for, name, :one))
     assert File.exist?(storage.send(:install_path_for, name, :two))
@@ -143,6 +142,18 @@ class StorageTest < Test::Unit::TestCase
     assert !File.exist?(storage.send(:install_path_for, name))
     assert !File.exist?(storage.send(:install_path_for, name, :one))
     assert !File.exist?(storage.send(:install_path_for, name, :two))
+  end
+  
+  def test_install_images_doesnt_leave_zombies_on_processor_error
+    storage = HasImage::Storage.new(@record)
+    processor = stub()
+    processor.stubs(:process).raises(Exception)
+    storage.stubs(:processor).returns(processor)
+    storage.image_data = temp_file("image.jpg")
+    assert_raise Exception do
+      storage.install_images
+    end
+    assert !File.exist?(storage.send(:install_path_for, name))
   end
   
   def test_install_images_doesnt_automatically_generate_thumbnails_if_that_option_is_set

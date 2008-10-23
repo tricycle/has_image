@@ -190,13 +190,20 @@ module HasImage
       FileUtils.mkdir_p path
     end
     
+    def create_file(path)
+      File.open(path, "w") { |file| yield file }
+    rescue
+      FileUtils.rm path if File.exist? path
+      raise
+    end
+    
     # Write the main image to the install directory - probably somewhere under
     # RAILS_ROOT/public.
     def install_main_image_to(image_name)
       ensure_directory_exists!
-      File.open install_path_for(image_name), "w" do |final_destination|
+      create_file install_path_for(image_name) do |image_file|
         processor.process(@temp_file) do |processed_image|
-          final_destination.write processed_image
+          image_file.write processed_image
         end
       end
     end
@@ -205,9 +212,9 @@ module HasImage
       size_spec = options[:thumbnails][thumb_name.to_sym]
       raise StorageError unless size_spec
       ensure_directory_exists!
-      File.open install_path_for(filename, thumb_name), "w" do |thumbnail_destination|
+      create_file install_path_for(filename, thumb_name) do |thumb_file|
         processor.process install_path_for(filename), size_spec do |thumbnail_data|
-          thumbnail_destination.write thumbnail_data
+          thumb_file.write thumbnail_data
         end
       end
     end
