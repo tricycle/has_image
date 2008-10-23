@@ -46,6 +46,11 @@ module HasImage
       def generated_file_name(*args)
         return args.first.to_param.to_s
       end
+      
+      def escape_file_name_for_http(webpath)
+        dir, file = File.split(webpath)
+        File.join(dir, CGI.escape(file))
+      end
     end
 
     # The constructor should be invoked with the record
@@ -66,7 +71,7 @@ module HasImage
         @temp_file = image_data
       else
         image_data.rewind
-        @temp_file = Tempfile.new 'has_image_data_%s' % Storage.generated_file_name
+        @temp_file = Tempfile.new 'has_image_data_%s' % self.class.generated_file_name
         @temp_file.write(image_data.read)
       end
     end
@@ -83,72 +88,64 @@ module HasImage
       @temp_file.size > options[:max_size]
     end
     
-    # Invokes the processor to resize the image(s) and the installs them to
-    # the appropriate directory.
-    def install_images(object)
-      generated_name = Storage.generated_file_name(object)
-      install_main_image(object.has_image_id, generated_name)
-      generate_thumbnails(object.has_image_id, generated_name) if thumbnails_needed?
-      return generated_name
-    ensure  
-      @temp_file.close! if !@temp_file.closed?
-      @temp_file = nil
-    end
-    
     # Measures the given dimension using the processor
-    def measure(path, dimension)
-      processor.measure(path, dimension)
+    def measure(dimension)
+      processor.measure(filesystem_path, dimension)
     end
     
-    # Gets the "web" path for an image. For example:
-    #
-    #   /photos/0000/0001/3er0zs.jpg
-    def public_path_for(object, thumbnail = nil)
-      webpath = filesystem_path_for(object, thumbnail).gsub(/\A.*public/, '')
-      escape_file_name_for_http(webpath)
-    end
-    
-    def escape_file_name_for_http(webpath)
-      dir, file = File.split(webpath)
-      File.join(dir, CGI.escape(file))
-    end
-    
-    # Deletes the images and directory that contains them.
-    def remove_images(object, name)
-      FileUtils.rm Dir.glob(File.join(path_for(object.has_image_id), name + '*'))
-      Dir.rmdir path_for(object.has_image_id)
-    rescue SystemCallError 
-    end
-
     # Is the uploaded file within the min and max allowed sizes?
     def valid?
       !(image_too_small? || image_too_big?)
     end
     
+    # Invokes the processor to resize the image(s) and the installs them to
+    # the appropriate directory.
+    def install_images
+      generated_name = self.class.generated_file_name(@record)
+      install_main_image_to(generated_name)
+      generate_thumbnails(generated_name) if thumbnails_needed?
+      return generated_name
+    ensure  
+      @temp_file.close! unless @temp_file.closed?
+      @temp_file = nil
+    end
+    
+    # Deletes the images and directory that contains them.
+    def remove_images
+      name = @record.send(options[:column])
+      FileUtils.rm Dir.glob(File.join(path, name + '*'))
+      Dir.rmdir path
+    rescue SystemCallError
+    end
+    
     # Write the thumbnails to the install directory - probably somewhere under
     # RAILS_ROOT/public.
-    def generate_thumbnails(id, name)
-      ensure_directory_exists!(id)
-      options[:thumbnails].keys.each { |thumb_name| generate_thumbnail(id, name, thumb_name) }
+    def generate_thumbnails(filename=nil)
+      filename ||= @record.send(options[:column])
+      ensure_directory_exists!
+      options[:thumbnails].keys.each { |thumb_name| install_thumbnail_to(thumb_name, filename) }
     end
     alias_method :regenerate_thumbnails, :generate_thumbnails #Backwards-compat
     
-    def generate_thumbnail(id, name, thumb_name)
-      size_spec = options[:thumbnails][thumb_name.to_sym]
-      raise StorageError unless size_spec
-      ensure_directory_exists!(id)
-      File.open absolute_path(id, name, thumb_name), "w" do |thumbnail_destination|
-        processor.process absolute_path(id, name), size_spec do |thumbnail_data|
-          thumbnail_destination.write thumbnail_data
-        end
-      end
+    def generate_thumbnail(thumb_name)
+      install_thumbnail_to(thumb_name, @record.send(options[:column]))
     end
      
-    # Gets the full local filesystem path for an image. For example:
+    # Gets the full local filesystem path for an image, or optionally, one of its named thumbnails.
     #
+    # For example:
     #   /var/sites/example.com/production/public/photos/0000/0001/3er0zs.jpg
-    def filesystem_path_for(object, thumbnail = nil)
-      File.join(path_for(object.has_image_id), file_name_for(object.send(options[:column]), thumbnail))
+    def filesystem_path(thumb_name=nil)
+      File.join path, file_name(thumb_name)
+    end
+    
+    # Gets the "web" path for an image or a named thumbnail of it
+    #
+    # Example:
+    #   /photos/0000/0001/3er0zs.jpg
+    def public_path(thumb_name = nil)
+      webpath = filesystem_path(thumb_name).gsub(/\A.*public/, '')
+      self.class.escape_file_name_for_http(webpath)
     end
     
     protected
@@ -162,7 +159,7 @@ module HasImage
     
     # File name, plus thumbnail suffix, plus extension. For example:
     #
-    #   file_name_for("abc123", :thumb)
+    #   file_name(:thumb)
     #
     # gives you:
     #
@@ -170,33 +167,47 @@ module HasImage
     #   
     # It uses an underscore to separatore parts by default, but that is configurable
     # by setting HasImage::Storage.thumbnail_separator
-    def file_name_for(*args)
-      "%s.%s" % [args.compact.join(self.class.thumbnail_separator), extension]
+    def file_name(thumb_name=nil)
+      file_name_for @record.send(options[:column]), thumb_name
     end
-
-    # Get the full path for the id. For example:
+    
+    # Get the full path for the record. For example:
     #
     #  /var/sites/example.org/production/public/photos/0000/0001
-    def path_for(id)
-      debugger if $debug
-      File.join(options[:base_path], options[:path_prefix], Storage.partitioned_path(id))
+    def path
+      File.join(options[:base_path], options[:path_prefix], self.class.partitioned_path(@record.has_image_id))
     end
     
-    def absolute_path(id, *args)
-      File.join(path_for(id), file_name_for(*args))
+    def file_name_for(image_name, thumb_name=nil)
+      "%s.%s" % [[image_name, thumb_name].compact.join(self.class.thumbnail_separator), extension]
     end
     
-    def ensure_directory_exists!(id)
-      FileUtils.mkdir_p path_for(id)
+    def install_path_for(image_name, thumb_name=nil)
+      File.join path, file_name_for(image_name, thumb_name)
+    end
+    
+    def ensure_directory_exists!
+      FileUtils.mkdir_p path
     end
     
     # Write the main image to the install directory - probably somewhere under
     # RAILS_ROOT/public.
-    def install_main_image(id, name)
-      ensure_directory_exists!(id)
-      File.open absolute_path(id, name), "w" do |final_destination|
+    def install_main_image_to(image_name)
+      ensure_directory_exists!
+      File.open install_path_for(image_name), "w" do |final_destination|
         processor.process(@temp_file) do |processed_image|
           final_destination.write processed_image
+        end
+      end
+    end
+    
+    def install_thumbnail_to(thumb_name, filename)
+      size_spec = options[:thumbnails][thumb_name.to_sym]
+      raise StorageError unless size_spec
+      ensure_directory_exists!
+      File.open install_path_for(filename, thumb_name), "w" do |thumbnail_destination|
+        processor.process install_path_for(filename), size_spec do |thumbnail_data|
+          thumbnail_destination.write thumbnail_data
         end
       end
     end

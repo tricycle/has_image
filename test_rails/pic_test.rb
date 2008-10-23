@@ -43,9 +43,12 @@ class PicTest < Test::Unit::TestCase
 
   def test_create
     @pic = Pic.new(:image_data => fixture_file_upload("/image.jpg", "image/jpeg"))
+    # require 'ruby-debug'
+    # debugger
     assert @pic.save!
     assert_not_nil @pic.public_path
     assert_not_nil @pic.absolute_path
+    assert File.exist?(@pic.absolute_path)
   end
 
   def test_update
@@ -77,6 +80,14 @@ class PicTest < Test::Unit::TestCase
     Pic.has_image_options[:auto_generate_thumbnails] = false
     @pic = Pic.create!(:image_data => fixture_file_upload("/image.jpg", "image/jpeg"))
     assert !File.exist?(@pic.absolute_path(:tiny))
+  end
+  
+  def test_generate_thumbnails_on_demand
+    Pic.has_image_options[:thumbnails] = {:tiny => "16x16"}
+    Pic.has_image_options[:auto_generate_thumbnails] = false
+    @pic = Pic.create!(:image_data => fixture_file_upload("/image.jpg", "image/jpeg"))
+    @pic.generate_thumbnail! :tiny
+    assert File.exist?(@pic.absolute_path(:tiny))
   end
 
   def test_regenerate_thumbnails_succeeds
