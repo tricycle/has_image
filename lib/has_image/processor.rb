@@ -93,7 +93,8 @@ module HasImage
         commands.strip
         # Fixed-dimension images
         if size =~ /\A[\d]*x[\d]*!?\Z/
-          commands.resize "#{size}^"
+          # commands.resize "#{size}^" #deactivated to see if imagemagick works at all
+          commands.resize "#{size}" # ^ operator only available from ImageMagick 6.3.8
           commands.gravity "center"
           commands.extent size
         # Non-fixed-dimension images
