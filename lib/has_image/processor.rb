@@ -109,6 +109,7 @@ module HasImage
       end
     end
     
+    # nicked from here: http://blog.craigambrose.com/past/2007/12/3/image_cropping_with_mini_magick/
     def crop_image_to_square(image, commands, square_size)
       width, height = image[:width], image[:height]
       if width < height
