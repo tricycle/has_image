@@ -92,9 +92,13 @@ module HasImage
         commands.send("auto-orient".to_sym)
         commands.strip
         # Fixed-dimension images
-        if size =~ /\A[\d]*x[\d]*!?\Z/
-          # commands.resize "#{size}^" #deactivated to see if imagemagick works at all
-          commands.resize "#{size}" # ^ operator only available from ImageMagick 6.3.8
+        if size =~ /\A([\d]*)x([\d]*)!?\Z/
+          if $1 == $2
+            crop_image_to_square(image, commands, $1)
+          else
+            # commands.resize "#{size}^" #deactivated to see if imagemagick works at all
+            commands.resize "#{size}" # ^ operator only available from ImageMagick 6.3.8
+          end
           commands.gravity "center"
           commands.extent size
         # Non-fixed-dimension images
@@ -103,6 +107,18 @@ module HasImage
         end
         commands.quality options[:output_quality]
       end
+    end
+    
+    def crop_image_to_square(image, commands, square_size)
+      width, height = image[:width], image[:height]
+      if width < height
+        shave_off = ((height - width)/2.0).round
+        commands.shave("0x#{shave_off}")
+      elsif width > height
+        shave_off = ((width - height)/2.0).round
+        commands.shave("#{shave_off}x0")
+      end
+      commands.resize("#{square_size}x#{square_size}")
     end
 
     def convert_image(image, format=options[:convert_to])
